@@ -179,6 +179,9 @@ void* encrypter(void* pass_data)
 
     while(true)
     {
+        pthread_mutex_lock(&mutex);
+        is_encrypted = false;
+        current_guess.has_guess = false;
         for (int i = 0; i < len; i++) 
         {
             unsigned char rnd = MTA_get_rand_char();
@@ -195,56 +198,68 @@ void* encrypter(void* pass_data)
 
 
         MTA_encrypt(key,key_len,password,len, ((struct password_data*)pass_data)->encrypted_password, &((struct password_data*)pass_data)->encrypted_length);
-    
-
-        pthread_mutex_lock(&mutex);
+        
+        printf("%ld \t [SERVER]\t [INFO]   New password generated: %s, key: %s, After encryption: ", time(NULL),password, key);
+            for(int i = 0 ; i < ((struct password_data*)pass_data)->encrypted_length; i++) 
+            {
+                printf("%c",isprint(((struct password_data*)pass_data)->encrypted_password[i]) ? ((struct password_data*)pass_data)->encrypted_password[i] : '.');
+            }
+            printf("\n");
         ((struct password_data*)pass_data)->version++;
         if(!password_generated)
         {
             password_generated = true;
             pthread_cond_broadcast(&cond);
         }
-        printf("%ld \t [SERVER]\t [INFO]   New password generated: %s, key: %s, After encryption: ", time(NULL),
-            password, 
-            key);
-     for(int i = 0 ; i < ((struct password_data*)pass_data)->encrypted_length; i++) 
-     {
-         printf("%c",isprint(((struct password_data*)pass_data)->encrypted_password[i]) ? ((struct password_data*)pass_data)->encrypted_password[i] : '.');
-     }
-     printf("\n");
 
-     if (((struct password_data*)pass_data)->timeout == 0) {
-        while (!is_encrypted) {
-            while (!current_guess.has_guess) {
-                pthread_cond_wait(&guess_cond, &mutex);
-            }
-    
-            // Handle guess
-            handle_guess(password, key_len, (struct password_data*)pass_data);
-        }
-    } else {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += ((struct password_data*)pass_data)->timeout;
-    
-        while (!is_encrypted) {
-            while (!current_guess.has_guess) {
-                if (pthread_cond_timedwait(&guess_cond, &mutex, &ts) == ETIMEDOUT) {
-                    printf("%ld\t [SERVER]\t [ERROR]  No password received during timeout (%d seconds), regenerating password.\n", time(NULL), ((struct password_data*)pass_data)->timeout);
-                    break;
+        if (((struct password_data*)pass_data)->timeout == 0)
+        {
+            while (!is_encrypted) 
+            {
+                while (!current_guess.has_guess) 
+                {
+                    pthread_cond_wait(&guess_cond, &mutex);
                 }
-            }
-    
-            if (current_guess.has_guess) {
                 handle_guess(password, key_len, (struct password_data*)pass_data);
             }
         }
-    }
+        else 
+        {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += ((struct password_data*)pass_data)->timeout;
     
-        is_encrypted = false;
-        pthread_mutex_unlock(&mutex);
-    }
-}
+            int timed_out = 0;
+    
+            while (!is_encrypted) 
+            {
+                while (!current_guess.has_guess) 
+                {
+                    if (pthread_cond_timedwait(&guess_cond, &mutex, &ts) == ETIMEDOUT) 
+                    {
+                        printf("%ld\t [SERVER]\t [ERROR]  No password received during timeout (%d seconds), regenerating password.\n", 
+                           time(NULL), ((struct password_data*)pass_data)->timeout);
+                        timed_out = 1;
+                        break;
+                    }
+                }
+    
+                if (timed_out) 
+                {
+                    break;
+                }
+    
+                if (current_guess.has_guess) 
+                {
+                    handle_guess(password, key_len, (struct password_data*)pass_data);
+                }
+            }
+            is_encrypted = false;
+            pthread_mutex_unlock(&mutex);
+        }    
+    } 
+}     
+
 
 void* decrypter(void* data)
 { 
