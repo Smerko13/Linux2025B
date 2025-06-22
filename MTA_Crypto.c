@@ -39,8 +39,6 @@ struct decrypter_data
 void *encrypt(void* data);
 void *decrypt(void* data);
 char get_printable_character();
-bool check_is_finished();
-void set_is_finished();
 bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *password_length, int *timeout);
 void handle_guess(char* correct_password, int key_len, struct password_data* pass_data);
 
@@ -52,9 +50,6 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 bool is_encrypted = false;
 bool password_generated = false;
-
-pthread_mutex_t is_finished_mutex = PTHREAD_MUTEX_INITIALIZER;
-bool is_finished = false;
 
 int main(int argc, char *argv[])
 {
@@ -69,7 +64,7 @@ int main(int argc, char *argv[])
     int password_length = 0;
     int timeout = 0;
 
-    if(!argument_parser(argc, argv, &num_of_decrypters, &password_length, &(pass_data.timeout))) 
+    if (!argument_parser(argc, argv, &num_of_decrypters, &password_length, &(pass_data.timeout))) 
     {
         fprintf(stderr, "Error parsing arguments.\n");
         return 1;
@@ -85,16 +80,14 @@ int main(int argc, char *argv[])
         return 2;
     }
 
-    for(int i = 0; i < num_of_decrypters; i++) 
-    {
+    for (int i = 0; i < num_of_decrypters; i++) {
         decrypter_data_array[i].id = i + 1;
         decrypter_data_array[i].pass_data = &pass_data;
         pthread_create(&decrypter_threads[i], NULL, decrypt, &decrypter_data_array[i]);
     }
 
     pthread_join(encrypter_thread, NULL);
-    for (int i = 0; i < num_of_decrypters; i++)
-    {
+    for (int i = 0; i < num_of_decrypters; i++) {
         pthread_join(decrypter_threads[i], NULL);
     }
 
@@ -105,14 +98,11 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *password_length, int *timeout)
-{
+bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *password_length, int *timeout) {
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--timeout") == 0)
-        {
+        if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--timeout") == 0) {
             i++;
-            if(i >= argc) 
-            {
+            if(i >= argc) {
                 fprintf(stderr, "Error: Missing value for -t/--timeout option.\n");
                 return false;
             }
@@ -124,11 +114,9 @@ bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *passwo
             }
         }
 
-        else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--password-length") == 0)
-        {
+        else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--password-length") == 0) {
             i++;
-            if(i >= argc)
-            {
+            if(i >= argc) {
                 fprintf(stderr, "Error: Missing value for -l/--password-length option.\n");
                 return false;
             }
@@ -140,18 +128,15 @@ bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *passwo
                 return false;
             }
 
-            else if(*password_length % 8 != 0 )
-            {
+            else if(*password_length % 8 != 0 ) {
                 fprintf(stderr, "Error: Password length must be a multiple of 8.\n");
                 return false;
             }
         }
 
-        else if (strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--num-of-decrypters") == 0)
-        {
+        else if (strcmp(argv[i], "-n") == 0 || strcmp(argv[i], "--num-of-decrypters") == 0) {
             i++;
-            if(i >= argc)
-            {
+            if(i >= argc) {
                 fprintf(stderr, "Error: Missing value for -n/--num-of-decrypters option.\n");
                 return false;
             }
@@ -163,8 +148,7 @@ bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *passwo
             }
         }
 
-        else 
-        {
+        else {
             fprintf(stderr, "Error: Unknown option %s\n", argv[i]);
             return false;
         }
@@ -186,6 +170,7 @@ bool argument_parser(int argc, char *argv[], int *num_of_decrypters, int *passwo
     return true;
 }
 
+// Get Printable Character
 char get_printable_character() {
     bool is_printable = false;
     char c = 0;
@@ -198,42 +183,24 @@ char get_printable_character() {
     return c;
 }
 
-bool check_is_finished() {
-    pthread_mutex_lock(&is_finished_mutex);
-    bool current_value = is_finished;
-    pthread_mutex_unlock(&is_finished_mutex);
-
-    return current_value;
-}
-
-void set_is_finished() {
-    pthread_mutex_lock(&is_finished_mutex);
-    is_finished = true;
-    pthread_mutex_unlock(&is_finished_mutex);
-}
-
-void* encrypt(void* data)
-{
+void* encrypt(void* data) {
     struct password_data* pass_data = ((struct password_data*)data);  
     int pass_len = pass_data->length;
     int key_len = pass_len / 8; // Assuming key length is 1/8 of password length
     char password[pass_len + 1];
     char key[key_len + 1];
 
-    while(!check_is_finished())
-    {
+    while (true) {
         pthread_mutex_lock(&mutex);
         is_encrypted = false;
         current_guess.has_guess = false;
 
-        for (int i = 0; i < pass_len; i++)
-        {
+        for (int i = 0; i < pass_len; i++) {
             password[i] = get_printable_character();
         } 
         password[pass_len] = '\0';
 
-        for (int i = 0; i < key_len; i++) 
-        {
+        for (int i = 0; i < key_len; i++) {
             key[i] = MTA_get_rand_char();
         }
         key[key_len] = '\0';
@@ -241,23 +208,18 @@ void* encrypt(void* data)
         MTA_encrypt(key, key_len, password, pass_len, pass_data->encrypted_password, &pass_data->encrypted_length);
         
         printf("%ld \t [SERVER]\t [INFO]   New password generated: %s, key: %s, After encryption: ", time(NULL), password, key);
-        for(int i = 0 ; i < pass_data->encrypted_length; i++) 
-        {
+        for (int i = 0 ; i < pass_data->encrypted_length; i++) {
             printf("%c",isprint(pass_data->encrypted_password[i]) ? pass_data->encrypted_password[i] : '.');
         }
         printf("\n");
-        if(!password_generated)
-        {
+        if (!password_generated) {
             password_generated = true;
             pthread_cond_broadcast(&cond);
         }
 
-        if (pass_data->timeout == 0)
-        {
-            while (!is_encrypted) 
-            {
-                while (!current_guess.has_guess) 
-                {
+        if (pass_data->timeout == 0) {
+            while (!is_encrypted) {
+                while (!current_guess.has_guess) {
                     pthread_cond_wait(&guess_cond, &mutex);
                 }
                 handle_guess(password, key_len, pass_data);
@@ -273,12 +235,9 @@ void* encrypt(void* data)
 
         int timed_out = 0;
 
-        while (!is_encrypted) 
-        {
-            while (!current_guess.has_guess) 
-            {
-                if (pthread_cond_timedwait(&guess_cond, &mutex, &ts) == ETIMEDOUT) 
-                {
+        while (!is_encrypted) {
+            while (!current_guess.has_guess) {
+                if (pthread_cond_timedwait(&guess_cond, &mutex, &ts) == ETIMEDOUT) {
                     printf("%ld\t [SERVER]\t [ERROR]  No password received during timeout (%d seconds), regenerating password.\n", 
                         time(NULL), pass_data->timeout);
                     timed_out = 1;
@@ -286,13 +245,11 @@ void* encrypt(void* data)
                 }
             }
 
-            if (timed_out) 
-            {
+            if (timed_out) {
                 break;
             }
 
-            if (current_guess.has_guess) 
-            {
+            if (current_guess.has_guess) {
                 handle_guess(password, key_len, pass_data);
             }
         }
@@ -303,8 +260,7 @@ void* encrypt(void* data)
 }     
 
 
-void* decrypt(void* data)
-{ 
+void* decrypt(void* data) { 
     int iterations = 0;
     struct decrypter_data* decrypter_info = (struct decrypter_data*)data;
     struct password_data* pass_data = decrypter_info->pass_data;
@@ -317,43 +273,33 @@ void* decrypt(void* data)
     unsigned int decrypted_length = 0;
 
     pthread_mutex_lock(&mutex);
-    while(!password_generated) 
-    {
+    while(!password_generated) {
         pthread_cond_wait(&cond, &mutex);
     }
     pthread_mutex_unlock(&mutex);
 
     
-    while(!check_is_finished())
-    {
+    while(true) {
         iterations++;
         MTA_get_rand_data(gueesed_key, key_len);
         MTA_decrypt(gueesed_key, key_len, pass_data->encrypted_password, pass_data->encrypted_length, decrypted_password, &decrypted_length);
         decrypted_password[decrypted_length] = '\0';
 
         bool printable = true;
-        for (int i = 0; i < decrypted_length; i++) 
-        {
-            if (!isprint(decrypted_password[i])) 
-            {
+        for (int i = 0; i < decrypted_length; i++) {
+            if (!isprint(decrypted_password[i])) {
                 printable = false;
                 break;
             }
         }
-        if(!printable) 
-        {
+
+        if(!printable) {
             continue;   
         }
 
-        pthread_mutex_lock(&mutex);
-        if (check_is_finished()) {
-            pthread_mutex_unlock(&mutex);
-            break;
-        }
-
         printf("%ld\t [CLIENT %d]\t [INFO]   After decryption: (%s), key guessed: (%.*s), sending to server after %d iterations\n",time(NULL),id,decrypted_password,key_len, gueesed_key, iterations);
-        if (!current_guess.has_guess)
-        {
+        
+        if (!current_guess.has_guess) {
             strncpy(current_guess.guessed_password, decrypted_password, decrypted_length);
             strncpy(current_guess.guessed_key, gueesed_key, key_len);
             current_guess.guessed_password[decrypted_length] = '\0';
@@ -380,13 +326,10 @@ void handle_guess(char* correct_password, int key_len, struct password_data* pas
                time(NULL), current_guess.client_id, current_guess.guessed_password, correct_password);
         pthread_cond_broadcast(&cond);
 
-        set_is_finished();
     } else {
         printf("%ld\t [SERVER]\t [ERROR]  Wrong password received from client #%d (%s), should be %s\n",
-               time(NULL), current_guess.client_id, current_guess.guessed_password,correct_password);
+               time(NULL), current_guess.client_id, current_guess.guessed_password, correct_password);
     }
 
     current_guess.has_guess = false;
 }
-
-
