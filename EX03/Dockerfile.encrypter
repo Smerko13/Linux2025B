@@ -1,0 +1,17 @@
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    gcc \
+    make \
+    libssl-dev \
+    syslog-ng
+
+RUN mkdir -p /tmp/mtacrypt/ && mkdir -p /var/log
+
+COPY . /usr/src/app
+WORKDIR /usr/src/app
+
+RUN make
+
+CMD ["./encrypter/encrypter.out"]
+
